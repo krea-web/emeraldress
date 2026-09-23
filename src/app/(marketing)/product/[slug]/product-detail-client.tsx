@@ -583,11 +583,14 @@ export function ProductDetailClient({ product }: { product: Product }) {
   // Fetch reviews summary
   useEffect(() => {
     (async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("reviews")
         .select("rating")
         .eq("product_id", product.id)
         .eq("is_approved", true);
+      // Vedi ProductReviews.load: un errore qui si travestiva da "nessuna
+      // recensione" e il voto medio spariva in silenzio.
+      if (error) console.error("[product] load rating error:", error);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const arr = (data as any[]) ?? [];
       if (arr.length === 0) return;

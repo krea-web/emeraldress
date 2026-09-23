@@ -6,7 +6,12 @@ const cspDirectives = [
   "default-src 'self'",
   // 'unsafe-inline'/'unsafe-eval' restano per GA4 gtag, Stripe inline, gtag dataLayer.
   // Quando estirperemo gli script inline (Next.js Script con nonce) potremo stringere.
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com https://www.google-analytics.com https://js.stripe.com https://checkout.stripe.com https://connect.facebook.net https://vercel.live https://va.vercel-scripts.com https://eu-assets.i.posthog.com https://js.sentry-cdn.com https://browser.sentry-cdn.com",
+  // Sentry: `js-de.` è la CDN della regione UE, dove sta la nostra chiave; `js.`
+  // resta per compatibilità. Il bundle SDK lo scarica poi il loader da
+  // `browser.sentry-cdn.com`, senza suffisso di regione anche per le chiavi UE.
+  // Se il DSN cambia regione, questa riga va aggiornata insieme al DSN:
+  // l'URL in layout.tsx si adegua da solo, la CSP no, e il browser blocca.
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com https://www.google-analytics.com https://js.stripe.com https://checkout.stripe.com https://connect.facebook.net https://vercel.live https://va.vercel-scripts.com https://eu-assets.i.posthog.com https://js.sentry-cdn.com https://js-de.sentry-cdn.com https://browser.sentry-cdn.com",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' data: https://fonts.gstatic.com",
   "img-src 'self' data: blob: https:",

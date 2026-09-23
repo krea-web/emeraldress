@@ -158,11 +158,16 @@ const ProductReviews = ({ productId }: { productId: string }) => {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("reviews")
       .select("id, customer_name, rating, comment, created_at, user_id, photo_urls")
       .eq("product_id", productId)
       .eq("is_approved", true);
+    // Senza questo log un errore diventava indistinguibile da "questo capo non
+    // ha recensioni": `data` torna null, `|| []` lo traduce in lista vuota e la
+    // scheda sembra solo priva di recensioni. E' cosi' che un 401 sulla RLS e'
+    // rimasto invisibile per mesi. Se fallisce, ora almeno si vede in console.
+    if (error) console.error("[reviews] load error:", error);
     setReviews((data as Review[]) || []);
     setLoading(false);
   }, [productId]);

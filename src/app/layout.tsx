@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import { Playfair_Display, Alice } from "next/font/google";
 import { Providers } from "./providers";
+import { sentryLoaderUrl } from "@/lib/sentry-loader";
 import "./globals.css";
 
 const playfair = Playfair_Display({
@@ -138,8 +139,11 @@ const websiteSchema = {
 const POSTHOG_KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY;
 const POSTHOG_HOST = process.env.NEXT_PUBLIC_POSTHOG_HOST;
 // Sentry (round 10): loader ufficiale, solo con la env. Errori = sicurezza.
-const SENTRY_DSN = process.env.NEXT_PUBLIC_SENTRY_DSN;
-const sentryLoader = SENTRY_DSN ? `https://js.sentry-cdn.com/${SENTRY_DSN.split("//")[1]?.split("@")[0]}.min.js` : null;
+// L'host della CDN è derivato dalla regione del DSN, non scritto a mano: la
+// chiave è europea e si serve da js-de.sentry-cdn.com. Chiederla a
+// js.sentry-cdn.com dava 200 con uno stub inerte — zero eventi, zero errori.
+// Il dominio va tenuto allineato alla script-src in next.config.ts.
+const sentryLoader = sentryLoaderUrl(process.env.NEXT_PUBLIC_SENTRY_DSN);
 const posthogSnippet =
   POSTHOG_KEY && POSTHOG_HOST
     ? `!function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="init capture register register_once register_for_session unregister unregister_for_session getFeatureFlag getFeatureFlagPayload isFeatureEnabled reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar get_property getSessionProperty createPersonProfile opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing clear_opt_in_out_capturing debug".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);posthog.init('${POSTHOG_KEY}',{api_host:'${POSTHOG_HOST}',defaults:'2025-05-24',person_profiles:'identified_only',disable_session_recording:true});`
