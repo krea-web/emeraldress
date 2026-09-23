@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/carousel";
 import { HoverBorderGradient } from "@/components/ui/hover-border-gradient";
 import { useProducts } from "@/hooks/useProducts";
+import { isShowcase } from "@/lib/product-status";
 import GemLoader from "@/components/GemLoader";
 import RelatedLinks from "@/components/RelatedLinks";
 
@@ -209,15 +210,16 @@ const LatestCollectionShowcase = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 md:gap-10 lg:gap-16 items-center justify-center max-w-7xl mx-auto mb-24">
-            {emeraldProducts.map((product, index) => (
-              <Link href={`/product/${product.slug ?? product.id}`} key={product.id}>
+            {emeraldProducts.map((product, index) => {
+              const showcase = isShowcase(product);
+              const card = (
                 <motion.div
                   initial={{ opacity: 0, y: 50 }}
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
                   transition={{ delay: index * 0.2, duration: 0.8 }}
                   whileHover={{ y: -15 }}
-                  className={`relative group cursor-pointer ${index === 1 ? "md:-mt-16" : ""}`}
+                  className={`relative group ${showcase ? "" : "cursor-pointer"} ${index === 1 ? "md:-mt-16" : ""}`}
                 >
                   <div className="aspect-[3/4] overflow-hidden rounded-[2rem] shadow-2xl relative">
                     <div className="absolute inset-0 bg-black/20 group-hover:bg-black/10 transition-colors duration-500 z-10" />
@@ -231,12 +233,15 @@ const LatestCollectionShowcase = () => {
                       className="w-full h-full object-cover transition-transform duration-[1.5s] group-hover:scale-110"
                     />
 
+                    {/* Stesso slot: in vetrina il prezzo viene sostituito. */}
                     <div className="absolute top-6 right-6 z-20 bg-white/90 backdrop-blur-md px-4 py-2 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transform translate-y-2 group-hover:translate-y-0 transition-all duration-300">
                       <span className="font-serif text-emerald-900 font-bold">
-                        {new Intl.NumberFormat("it-IT", {
-                          style: "currency",
-                          currency: "EUR",
-                        }).format(product.price)}
+                        {showcase
+                          ? "Su richiesta"
+                          : new Intl.NumberFormat("it-IT", {
+                              style: "currency",
+                              currency: "EUR",
+                            }).format(product.price)}
                       </span>
                     </div>
                   </div>
@@ -248,8 +253,18 @@ const LatestCollectionShowcase = () => {
                     <div className="w-12 h-0.5 bg-emerald-200 mx-auto group-hover:w-24 transition-all duration-300" />
                   </div>
                 </motion.div>
-              </Link>
-            ))}
+              );
+
+              // In vetrina niente <Link>: l’href resterebbe apribile col tasto
+              // destro e seguibile dai crawler.
+              return showcase ? (
+                <div key={product.id}>{card}</div>
+              ) : (
+                <Link href={`/product/${product.slug ?? product.id}`} key={product.id}>
+                  {card}
+                </Link>
+              );
+            })}
           </div>
         )}
 

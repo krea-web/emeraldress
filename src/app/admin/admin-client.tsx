@@ -7,6 +7,7 @@ import { RichTextEditor } from "@/components/RichTextEditor";
 import { AnalyticsDashboard } from "@/components/admin/AnalyticsDashboard";
 import { ReturnsAdminSection } from "@/components/admin/ReturnsAdminSection";
 import { CustomersAdminSection } from "@/components/admin/CustomersAdminSection";
+import type { ProductStatus } from "@/lib/product-status";
 
 // TECH DEBT: cast a any per workaround known issue @supabase/ssr generic inference.
 // Sicurezza preservata: tutte le operazioni passano per RLS lato server.
@@ -15,7 +16,7 @@ const supabase = getSupabaseBrowserClient() as any;
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, Package, ShoppingBag, LogOut, Plus, X, Upload,
-  TrendingUp, DollarSign, ChevronRight, Edit2, Trash2, Eye, EyeOff,
+  TrendingUp, DollarSign, ChevronRight, Edit2, Trash2,
   Lock, GripVertical, ImageIcon, Mail, Download, Users, Archive, Send, Loader2,
   Code, Type, Layers, Settings, Palette, ScanSearch, Tag, Percent, Copy,
   BarChart3, MousePointerClick, RotateCcw, ExternalLink, AlertTriangle, Megaphone, Link as LinkIcon,
@@ -125,6 +126,29 @@ interface ImageItem {
 }
 
 // ── Empty product form ─────────────────────────────────────────────────────────
+// Stati prodotto: etichette e pillole condivise fra tabella e drawer.
+const STATUS_LABEL: Record<ProductStatus, string> = {
+  active: "Attivo",
+  showcase: "Vetrina",
+  draft: "Bozza",
+};
+
+// Pillole coerenti con il resto della tabella: verde / ambra / neutro.
+const STATUS_PILL: Record<ProductStatus, string> = {
+  active: "bg-emerald-50 text-emerald-700",
+  showcase: "bg-amber-50 text-amber-700",
+  draft: "bg-neutral-100 text-neutral-500",
+};
+
+/**
+ * Normalizza qualunque stringa arrivi dal DB a uno dei tre stati validi.
+ * Senza questo, riaprendo la scheda di un capo in vetrina lo stato veniva
+ * schiacciato su "active" e la vetrina si perdeva al primo salvataggio.
+ */
+function normalizeStatus(value: string | null | undefined): ProductStatus {
+  return value === "draft" || value === "showcase" ? value : "active";
+}
+
 const emptyForm = {
   name: "",
   description: "",
@@ -136,7 +160,7 @@ const emptyForm = {
   fabric_details: "",
   shipping_info: "",
   sizes: "XS/S,S/M,M/L",
-  status: "active" as "active" | "draft",
+  status: "active" as ProductStatus,
   stripe_payment_link: "",
   // stockMap: chiave = taglia (es. "XS/S"), valore = quantita' (string per Input).
   // Sincronizzato con `sizes` quando l'admin modifica la lista taglie.
@@ -899,7 +923,10 @@ ${bodyContent}
       fabric_details: p.fabric_details || "",
       shipping_info: p.shipping_info || "",
       sizes: productSizes.join(","),
-      status: (p.status === "draft" ? "draft" : "active") as "active" | "draft",
+      // normalizeStatus, non il vecchio ternario: con tre stati,
+      // `p.status === "draft" ? "draft" : "active"` avrebbe riportato
+      // ogni capo in vetrina ad "attivo" a ogni riapertura della scheda.
+      status: normalizeStatus(p.status),
       stripe_payment_link: p.stripe_payment_link || "",
       stockMap,
     });
@@ -998,10 +1025,15 @@ ${bodyContent}
     fetchAll();
   }
 
-  async function toggleStatus(p: Product) {
-    const newStatus = p.status === "active" ? "draft" : "active";
-    const { error } = await supabase.from("products").update({ status: newStatus }).eq("id", p.id);
+  /**
+   * Con tre stati un interruttore binario è ambiguo: si passa lo stato
+   * desiderato in modo esplicito.
+   */
+  async function setProductStatus(p: Product, next: ProductStatus) {
+    if (normalizeStatus(p.status) === next) return;
+    const { error } = await supabase.from("products").update({ status: next }).eq("id", p.id);
     if (error) { toast.error(error.message); return; }
+    toast.success(`${p.name.trim()} → ${STATUS_LABEL[next]}`);
     fetchAll();
   }
 
@@ -1862,27 +1894,33 @@ ${bodyContent}
                                   {p.stock ?? 0}
                                 </span>
                               </td>
-                              {/* Status */}
+                              {/* Status: select a tre voci, non un interruttore.
+                                  Con tre stati il bottone occhio era ambiguo, e su
+                                  iPad un invito a sbagliare. */}
                               <td className="px-4 py-3">
-                                <span className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium ${
-                                  p.status === "active"
-                                    ? "bg-emerald-50 text-emerald-700"
-                                    : "bg-neutral-100 text-neutral-500"
-                                }`}>
-                                  <span className={`w-1.5 h-1.5 rounded-full ${p.status === "active" ? "bg-emerald-500" : "bg-neutral-400"}`} />
-                                  {p.status === "active" ? "Attivo" : "Bozza"}
-                                </span>
+                                {(() => {
+                                  const st = normalizeStatus(p.status);
+                                  return (
+                                    <select
+                                      value={st}
+                                      onChange={(e) => setProductStatus(p, e.target.value as ProductStatus)}
+                                      aria-label={`Stato di ${p.name.trim()}`}
+                                      className={`appearance-none cursor-pointer text-xs px-2.5 py-1 pr-6 rounded-full font-medium border-0 focus:outline-none focus:ring-2 focus:ring-emerald-600 bg-[length:10px] bg-[right_0.5rem_center] bg-no-repeat ${STATUS_PILL[st]}`}
+                                      style={{
+                                        backgroundImage:
+                                          "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path fill='currentColor' d='M2 4.5L6 8.5L10 4.5'/></svg>\")",
+                                      }}
+                                    >
+                                      <option value="active">{STATUS_LABEL.active}</option>
+                                      <option value="showcase">{STATUS_LABEL.showcase}</option>
+                                      <option value="draft">{STATUS_LABEL.draft}</option>
+                                    </select>
+                                  );
+                                })()}
                               </td>
                               {/* Actions */}
                               <td className="px-4 py-3">
                                 <div className="flex items-center gap-1">
-                                  <button
-                                    onClick={() => toggleStatus(p)}
-                                    className="p-1.5 text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 rounded-lg transition-colors"
-                                    title={p.status === "active" ? "Nascondi" : "Pubblica"}
-                                  >
-                                    {p.status === "active" ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                                  </button>
                                   <button
                                     onClick={() => openEditProduct(p)}
                                     className="p-1.5 text-neutral-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors"
@@ -3914,16 +3952,42 @@ ${bodyContent}
                   <p className="text-[10px] text-neutral-400 mt-1.5">Se presente, sostituisce il carrello con il bottone "Acquista ora" che porta direttamente al checkout Stripe.</p>
                 </div>
 
-                {/* Active toggle */}
+                {/* Visibilità + vetrina.
+                    Mappatura: visibile off = draft; visibile on + vetrina on =
+                    showcase; visibile on + vetrina off = active. */}
                 <div className="flex items-center justify-between py-3 px-4 bg-neutral-50 rounded-xl">
                   <div>
-                    <p className="text-sm font-medium text-neutral-900">Prodotto Attivo</p>
-                    <p className="text-xs text-neutral-400">Visibile sulla piattaforma</p>
+                    <p className="text-sm font-medium text-neutral-900">Prodotto visibile</p>
+                    <p className="text-xs text-neutral-400">Se spento resta in bozza: non compare da nessuna parte sul sito.</p>
                   </div>
                   <Switch
-                    checked={form.status === "active"}
-                    onCheckedChange={(v) => setForm((f) => ({ ...f, status: v ? "active" : "draft" }))}
+                    checked={form.status !== "draft"}
+                    onCheckedChange={(v) =>
+                      setForm((f) => ({ ...f, status: v ? "active" : "draft" }))
+                    }
                     className="data-[state=checked]:bg-emerald-700"
+                  />
+                </div>
+
+                <div
+                  className={`flex items-center justify-between py-3 px-4 rounded-xl mt-3 ${
+                    form.status === "draft" ? "bg-neutral-50/60 opacity-50" : "bg-neutral-50"
+                  }`}
+                >
+                  <div className="pr-4">
+                    <p className="text-sm font-medium text-neutral-900">Solo vetrina (non acquistabile)</p>
+                    <p className="text-xs text-neutral-400">
+                      Le foto si vedono e scorrono nelle collezioni, ma la scheda non si apre
+                      e non si vedono prezzo né disponibilità. Il capo non può essere comprato.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={form.status === "showcase"}
+                    disabled={form.status === "draft"}
+                    onCheckedChange={(v) =>
+                      setForm((f) => ({ ...f, status: v ? "showcase" : "active" }))
+                    }
+                    className="data-[state=checked]:bg-amber-600"
                   />
                 </div>
               </div>

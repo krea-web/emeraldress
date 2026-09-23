@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import { useProducts, type Product } from "@/hooks/useProducts";
+import { isShowcase } from "@/lib/product-status";
 import GemLoader from "@/components/GemLoader";
 import FullscreenProductViewer from "@/components/FullscreenProductViewer";
 import { motion, AnimatePresence } from "framer-motion";
@@ -27,6 +28,7 @@ const CollectionCard = ({
   onOpenViewer: (id: string) => void;
 }) => {
   const href = `/product/${product.slug ?? product.id}`;
+  const showcase = isShowcase(product);
 
   // Total stock = somma di tutte le taglie (per badge urgency)
   const totalStock = useMemo(() => {
@@ -37,20 +39,73 @@ const CollectionCard = ({
     );
   }, [product.stock_by_size]);
 
-  const soldOut = totalStock === 0;
-  const lowStock = totalStock > 0 && totalStock <= 3;
+  // In vetrina non si comunica disponibilità: niente badge "Esaurito"/"Ultimo
+  // pezzo" e niente grayscale, che direbbe la stessa cosa al colpo d'occhio.
+  const soldOut = !showcase && totalStock === 0;
+  const lowStock = !showcase && totalStock > 0 && totalStock <= 3;
 
   const handleClick = (e: React.MouseEvent) => {
-    if (soldOut) {
-      // Su esaurito su mobile lasciamo che il viewer mostri comunque la card,
-      // ma sopra lg lo lasciamo navigare al PDP per leggere descrizione/lista d'attesa.
-    }
-    // Mobile/tablet (<lg): apri viewer fullscreen con swipe siblings
+    // Mobile/tablet (<lg): apri viewer fullscreen con swipe siblings.
+    // Vale anche in vetrina: il requisito è che le foto scorrano.
     if (typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches) {
       e.preventDefault();
       onOpenViewer(product.id);
     }
   };
+
+  const cardBody = (
+    <>
+      <div className="relative w-full aspect-[3/4.5] overflow-hidden bg-[#fdfdfd]">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={product.images?.[0]}
+          alt={product.name}
+          className={`w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105 ${
+            soldOut ? "grayscale opacity-70" : ""
+          }`}
+        />
+
+        {product.images[1] && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={product.images[1]}
+            alt={product.name}
+            className={`absolute inset-0 w-full h-full object-cover opacity-0 group-hover:opacity-100 transition-opacity duration-1000 ${
+              soldOut ? "grayscale" : ""
+            }`}
+          />
+        )}
+
+        {/* Badge urgency in alto a sinistra */}
+        {soldOut && (
+          <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-stone-900/90 backdrop-blur-sm text-white text-[9px] tracking-[0.2em] uppercase font-medium">
+            Esaurito
+          </div>
+        )}
+        {!soldOut && lowStock && (
+          <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-rose-600/95 backdrop-blur-sm text-white text-[9px] tracking-[0.2em] uppercase font-medium shadow-sm">
+            {totalStock === 1 ? "Ultimo pezzo" : `Solo ${totalStock} pezzi`}
+          </div>
+        )}
+      </div>
+
+      <div className="flex flex-col items-center text-center gap-1.5 px-2">
+        <h3 className="font-serif text-sm tracking-wide text-neutral-800 group-hover:text-emerald-900 transition-colors">
+          {product.name}
+        </h3>
+        {/* Stesso slot nei due casi: il prezzo viene sostituito, non tolto,
+            così la griglia non collassa di mezza riga. */}
+        <p className="font-sans text-[11px] tracking-[0.1em] text-neutral-500 font-light">
+          {showcase
+            ? "Su richiesta"
+            : new Intl.NumberFormat("it-IT", {
+                style: "currency",
+                currency: "EUR",
+              }).format(product.price)}
+        </p>
+      </div>
+    </>
+  );
 
   return (
     <motion.div
@@ -59,53 +114,21 @@ const CollectionCard = ({
       transition={{ duration: 0.6, delay: index * 0.05 }}
       className="group relative"
     >
-      <Link href={href} onClick={handleClick} className="flex flex-col gap-4 cursor-pointer">
-        <div className="relative w-full aspect-[3/4.5] overflow-hidden bg-[#fdfdfd]">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={product.images?.[0]}
-            alt={product.name}
-            className={`w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105 ${
-              soldOut ? "grayscale opacity-70" : ""
-            }`}
-          />
-
-          {product.images[1] && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={product.images[1]}
-              alt={product.name}
-              className={`absolute inset-0 w-full h-full object-cover opacity-0 group-hover:opacity-100 transition-opacity duration-1000 ${
-                soldOut ? "grayscale" : ""
-              }`}
-            />
-          )}
-
-          {/* Badge urgency in alto a sinistra */}
-          {soldOut && (
-            <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-stone-900/90 backdrop-blur-sm text-white text-[9px] tracking-[0.2em] uppercase font-medium">
-              Esaurito
-            </div>
-          )}
-          {!soldOut && lowStock && (
-            <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-rose-600/95 backdrop-blur-sm text-white text-[9px] tracking-[0.2em] uppercase font-medium shadow-sm">
-              {totalStock === 1 ? "Ultimo pezzo" : `Solo ${totalStock} pezzi`}
-            </div>
-          )}
+      {showcase ? (
+        // Niente <a>: non basta bloccare il click, un href resta apribile col
+        // tasto destro, in una nuova scheda, ed è seguibile dai crawler.
+        // Su mobile il tap apre comunque il viewer a tutto schermo.
+        <div
+          onClick={handleClick}
+          className="flex flex-col gap-4 cursor-pointer lg:cursor-default"
+        >
+          {cardBody}
         </div>
-
-        <div className="flex flex-col items-center text-center gap-1.5 px-2">
-          <h3 className="font-serif text-sm tracking-wide text-neutral-800 group-hover:text-emerald-900 transition-colors">
-            {product.name}
-          </h3>
-          <p className="font-sans text-[11px] tracking-[0.1em] text-neutral-500 font-light">
-            {new Intl.NumberFormat("it-IT", {
-              style: "currency",
-              currency: "EUR",
-            }).format(product.price)}
-          </p>
-        </div>
-      </Link>
+      ) : (
+        <Link href={href} onClick={handleClick} className="flex flex-col gap-4 cursor-pointer">
+          {cardBody}
+        </Link>
+      )}
     </motion.div>
   );
 };

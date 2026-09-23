@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useProducts } from "@/hooks/useProducts";
+import { isShowcase } from "@/lib/product-status";
 import ImageFallback from "./ImageFallback";
 import useEmblaCarousel from "embla-carousel-react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
@@ -16,7 +17,10 @@ const RelatedProducts = ({
   category: string;
 }) => {
   const { data: products } = useProducts(category || undefined);
-  const others = products?.filter((p) => p.id !== currentProductId) ?? [];
+  // I capi in vetrina sono esclusi del tutto: questo è cross-selling, e un
+  // capo non vendibile qui non ha funzione (né una scheda da aprire).
+  const others =
+    products?.filter((p) => p.id !== currentProductId && !isShowcase(p)) ?? [];
 
   const [emblaRef, emblaApi] = useEmblaCarousel({
     loop: false,

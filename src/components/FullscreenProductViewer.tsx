@@ -9,6 +9,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useWishlist } from "@/contexts/WishlistContext";
 import { AuthDialog } from "./AuthDialog";
 import type { Product } from "@/hooks/useProducts";
+import { isShowcase } from "@/lib/product-status";
 
 interface FullscreenProductViewerProps {
   /** Lista di prodotti tra cui scorrere (deve includere quello iniziale). */
@@ -62,6 +63,9 @@ export default function FullscreenProductViewer({
   const [hasUser, setHasUser] = useState<boolean | null>(null);
 
   const product = list[index];
+  // Vetrina: il carosello, il loop e lo swipe restano identici (le foto
+  // devono scorrere), ma spariscono prezzo, accesso alla scheda e azioni.
+  const showcase = isShowcase(product);
   const liked = product ? hasItem(product.id) : false;
   const productHref = product ? `/product/${product.slug ?? product.id}` : "/";
   const cover = product?.images?.[0] ?? "";
@@ -92,8 +96,10 @@ export default function FullscreenProductViewer({
   const goNext = useCallback(() => emblaApi?.scrollNext(), [emblaApi]);
 
   const openDetail = useCallback(() => {
+    // In vetrina la scheda non si apre: no-op.
+    if (isShowcase(list[index])) return;
     router.push(productHref);
-  }, [router, productHref]);
+  }, [router, productHref, list, index]);
 
   const toggleLike = () => {
     if (!product) return;
@@ -135,13 +141,20 @@ export default function FullscreenProductViewer({
           <div className="flex h-full">
             {list.map((p, i) => {
               const isAdjacent = Math.abs(i - index) <= 1 || (list.length > 2 && (Math.abs(i - index) === list.length - 1));
+              // Per-slide, non sul prodotto corrente: durante il drag
+              // l’indice puo’ essere ancora quello precedente.
+              const slideShowcase = isShowcase(p);
               return (
                 <div
                   key={p.id}
                   className="relative min-w-0 shrink-0 grow-0 basis-full h-full"
-                  onClick={openDetail}
-                  role="button"
-                  aria-label={`Apri scheda ${p.name}`}
+                  {...(slideShowcase
+                    ? {}
+                    : {
+                        onClick: openDetail,
+                        role: "button",
+                        "aria-label": `Apri scheda ${p.name}`,
+                      })}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
@@ -199,45 +212,66 @@ export default function FullscreenProductViewer({
         {/* Bottom info + actions */}
         <div className="absolute inset-x-0 bottom-0 z-10 pb-[env(safe-area-inset-bottom)] bg-gradient-to-t from-black/85 via-black/50 to-transparent pt-12">
           <div className="px-5 pb-5">
-            <button
-              onClick={openDetail}
-              className="flex items-center gap-1.5 text-white/70 text-[10px] tracking-[0.25em] uppercase mb-3 active:text-white"
-            >
-              <ChevronUp size={14} />
-              Apri scheda · tocca l&apos;immagine
-            </button>
+            {!showcase && (
+              <button
+                onClick={openDetail}
+                className="flex items-center gap-1.5 text-white/70 text-[10px] tracking-[0.25em] uppercase mb-3 active:text-white"
+              >
+                <ChevronUp size={14} />
+                Apri scheda · tocca l&apos;immagine
+              </button>
+            )}
 
             <div className="flex items-end justify-between gap-4">
-              <button onClick={openDetail} className="flex-1 text-left min-w-0">
-                <h2
-                  className="text-white text-xl truncate"
-                  style={{ fontFamily: "'Playfair Display', serif", fontWeight: 400 }}
-                >
-                  {product.name}
-                </h2>
-                <p className="text-white/80 text-sm mt-1">€ {Number(product.price).toFixed(2)}</p>
-              </button>
+              {showcase ? (
+                // Solo il nome: niente prezzo e niente semantica di bottone,
+                // non c’è nessuna scheda da aprire.
+                <div className="flex-1 text-left min-w-0">
+                  <h2
+                    className="text-white text-xl truncate"
+                    style={{ fontFamily: "'Playfair Display', serif", fontWeight: 400 }}
+                  >
+                    {product.name}
+                  </h2>
+                  <p className="text-white/60 text-sm mt-1">Su richiesta</p>
+                </div>
+              ) : (
+                <button onClick={openDetail} className="flex-1 text-left min-w-0">
+                  <h2
+                    className="text-white text-xl truncate"
+                    style={{ fontFamily: "'Playfair Display', serif", fontWeight: 400 }}
+                  >
+                    {product.name}
+                  </h2>
+                  <p className="text-white/80 text-sm mt-1">€ {Number(product.price).toFixed(2)}</p>
+                </button>
+              )}
 
-              <div className="flex items-center gap-3 shrink-0">
-                <button
-                  onClick={toggleLike}
-                  aria-label={liked ? "Rimuovi dalla wishlist" : "Aggiungi alla wishlist"}
-                  className={`w-12 h-12 rounded-full flex items-center justify-center backdrop-blur-md transition-all active:scale-90 ${
-                    liked
-                      ? "bg-rose-500/95 text-white"
-                      : "bg-white/15 text-white border border-white/25"
-                  }`}
-                >
-                  <Heart size={20} fill={liked ? "currentColor" : "none"} strokeWidth={liked ? 0 : 2} />
-                </button>
-                <button
-                  onClick={openDetail}
-                  aria-label="Vai alla scheda prodotto"
-                  className="w-12 h-12 rounded-full flex items-center justify-center bg-white text-emerald-950 active:scale-90 transition-all shadow-lg"
-                >
-                  <ShoppingBag size={20} />
-                </button>
-              </div>
+              {/* In vetrina spariscono entrambe le azioni. Il cuore compreso:
+                  la wishlist salva anche il prezzo, e quel prezzo
+                  ricomparirebbe in /profilo. */}
+              {!showcase && (
+                <div className="flex items-center gap-3 shrink-0">
+                  <button
+                    onClick={toggleLike}
+                    aria-label={liked ? "Rimuovi dalla wishlist" : "Aggiungi alla wishlist"}
+                    className={`w-12 h-12 rounded-full flex items-center justify-center backdrop-blur-md transition-all active:scale-90 ${
+                      liked
+                        ? "bg-rose-500/95 text-white"
+                        : "bg-white/15 text-white border border-white/25"
+                    }`}
+                  >
+                    <Heart size={20} fill={liked ? "currentColor" : "none"} strokeWidth={liked ? 0 : 2} />
+                  </button>
+                  <button
+                    onClick={openDetail}
+                    aria-label="Vai alla scheda prodotto"
+                    className="w-12 h-12 rounded-full flex items-center justify-center bg-white text-emerald-950 active:scale-90 transition-all shadow-lg"
+                  >
+                    <ShoppingBag size={20} />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
