@@ -9,8 +9,10 @@ import { useCart } from "@/contexts/CartContext";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import RecentlyViewed from "@/components/RecentlyViewed";
-
-const FREE_SHIPPING_THRESHOLD = 200;
+// Stessa costante che usa /api/checkout per decidere la shipping_option: se la
+// barra di progresso e il server divergono, il cliente vede una promessa che
+// al checkout non viene mantenuta.
+import { FREE_SHIPPING_THRESHOLD_EUR as FREE_SHIPPING_THRESHOLD } from "@/lib/shipping";
 
 export function CartDrawer() {
   const {

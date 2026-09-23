@@ -4,6 +4,7 @@ import { getStripe } from "@/lib/stripe";
 import { createSupabasePublicClient } from "@/lib/supabase/public";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { shippingCostCents } from "@/lib/shipping";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -157,6 +158,15 @@ export async function POST(request: NextRequest) {
     });
   }
 
+  // ── Spedizione (decisa dal SERVER) ────────────────────────────────
+  // Subtotale calcolato sulle righe già validate sopra (prezzi letti dal DB,
+  // non dal client). shippingCostCents applica la soglia: sotto soglia si paga,
+  // sopra soglia ritorna 0 e allora NON mandiamo nessuna shipping_option.
+  // Mandare un rate da 0 € è esattamente il difetto che faceva spedire gratis
+  // tutti: Stripe lo mostrava come voce scegliibile, e preselezionata.
+  const subtotalCents = validated.reduce((acc, v) => acc + v.unitAmountCents * v.quantity, 0);
+  const shippingCents = shippingCostCents(subtotalCents);
+
   // Build Stripe line_items
   const line_items = validated.map((v) => ({
     quantity: v.quantity,
@@ -280,31 +290,26 @@ export async function POST(request: NextRequest) {
       },
       phone_number_collection: { enabled: true },
       locale: "it",
-      // Spedizione: gratuita >= 200 EUR, altrimenti standard 9.90
-      shipping_options: [
-        {
-          shipping_rate_data: {
-            type: "fixed_amount",
-            fixed_amount: { amount: 0, currency: "eur" },
-            display_name: "Spedizione gratuita (ordini ≥ €200)",
-            delivery_estimate: {
-              minimum: { unit: "business_day", value: 3 },
-              maximum: { unit: "business_day", value: 5 },
-            },
-          },
-        },
-        {
-          shipping_rate_data: {
-            type: "fixed_amount",
-            fixed_amount: { amount: 990, currency: "eur" },
-            display_name: "Spedizione standard",
-            delivery_estimate: {
-              minimum: { unit: "business_day", value: 3 },
-              maximum: { unit: "business_day", value: 5 },
-            },
-          },
-        },
-      ],
+      // Spedizione: UNA sola opzione, già decisa sopra dal subtotale reale.
+      // shippingCents === 0 → nessuna shipping_options del tutto (= gratis),
+      // così Stripe non ha niente da far scegliere al cliente.
+      ...(shippingCents > 0
+        ? {
+            shipping_options: [
+              {
+                shipping_rate_data: {
+                  type: "fixed_amount" as const,
+                  fixed_amount: { amount: shippingCents, currency: "eur" },
+                  display_name: "Spedizione standard",
+                  delivery_estimate: {
+                    minimum: { unit: "business_day" as const, value: 3 },
+                    maximum: { unit: "business_day" as const, value: 5 },
+                  },
+                },
+              },
+            ],
+          }
+        : {}),
       allow_promotion_codes: true,
       metadata,
     });
