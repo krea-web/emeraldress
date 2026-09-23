@@ -52,7 +52,14 @@ export async function GET(request: NextRequest) {
     const { data: products } = productIds.length
       ? await supabase
           .from("products")
-          .select("id, slug, name, price, sale_price, images, stock_by_size")
+          .select("id, slug, name, price, sale_price, images, stock_by_size, status")
+          // NON uniformare a PUBLIC_PRODUCT_STATUSES: qui la regola e' piu'
+          // stretta apposta. Questa non e' una vetrina, e' un carrello da
+          // pagare: un capo in `showcase` verrebbe comunque rifiutato da
+          // /api/checkout con un 400 a fine percorso (route.ts:125), quindi lo
+          // si scarta a monte, esattamente come si fa gia' con lo stock
+          // esaurito poco piu' sotto.
+          .eq("status", "active")
           .in("id", productIds)
       : { data: [] };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

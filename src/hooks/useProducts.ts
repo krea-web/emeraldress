@@ -2,6 +2,12 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { PUBLIC_PRODUCT_STATUSES, type ProductStatus } from "@/lib/product-status";
+
+// Ri-esportati per comodità dei Client Component che già importano da qui.
+// La definizione vera sta in @/lib/product-status (serve anche lato server).
+export { isShowcase, PUBLIC_PRODUCT_STATUSES } from "@/lib/product-status";
+export type { ProductStatus } from "@/lib/product-status";
 
 function normalizeProduct(p: Record<string, unknown>) {
   const rawImages = Array.isArray(p.images) ? (p.images as unknown[]).flat(Infinity) : [];
@@ -26,6 +32,8 @@ export interface Product {
   created_at: string;
   slug?: string | null;
   stripe_payment_link?: string | null;
+  /** `active` | `showcase` | `draft`. Serve alle card per sapere se è in vetrina. */
+  status: ProductStatus;
 }
 
 // Timeout di sicurezza: se Supabase non risponde entro 8s, throw error.
@@ -47,7 +55,12 @@ export const useProducts = (
     queryKey: ["products", category],
     queryFn: async () => {
       const supabase = getSupabaseBrowserClient();
-      let query = supabase.from("products").select("*");
+      // Allow-list esplicita: un capo in bozza non deve uscire da qui.
+      // Mai .neq("status","draft"): una riga con status inatteso passerebbe.
+      let query = supabase
+        .from("products")
+        .select("*")
+        .in("status", PUBLIC_PRODUCT_STATUSES);
       if (category) query = query.eq("category", category);
       const { data, error } = await fetchWithTimeout(Promise.resolve(query), 8000);
       if (error) throw error;
@@ -62,19 +75,3 @@ export const useProducts = (
     retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 5000),
   });
 
-export const useProduct = (idOrSlug: string) =>
-  useQuery({
-    queryKey: ["product", idOrSlug],
-    queryFn: async () => {
-      const supabase = getSupabaseBrowserClient();
-      const { data, error } = await supabase
-        .from("products")
-        .select("*")
-        .or(`id.eq.${idOrSlug},slug.eq.${idOrSlug}`)
-        .maybeSingle();
-      if (error) throw error;
-      if (!data) return null;
-      return normalizeProduct(data as Record<string, unknown>) as unknown as Product;
-    },
-    enabled: !!idOrSlug,
-  });

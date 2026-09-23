@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { createSupabasePublicClient } from "@/lib/supabase/public";
+import { INDEXABLE_PRODUCT_STATUSES } from "@/lib/product-status";
 
 const SITE_URL = "https://www.emeraldress.com";
 
@@ -20,10 +21,13 @@ export const revalidate = 3600; // 1h
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   try {
     const supabase = createSupabasePublicClient();
+    // Solo `active`: un capo in vetrina risponde 307 su /collezioni e una
+    // bozza risponde 404, quindi nessuno dei due va nella sitemap.
+    // Allow-list esplicita al posto del vecchio .neq("status","draft").
     const { data: products } = await supabase
       .from("products")
       .select("id, slug, created_at, status")
-      .neq("status", "draft");
+      .in("status", INDEXABLE_PRODUCT_STATUSES);
 
     const productEntries: MetadataRoute.Sitemap = ((products as Array<{
       id: string;

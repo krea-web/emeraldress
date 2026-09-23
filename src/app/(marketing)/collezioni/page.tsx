@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { CollezioniClient } from "./collezioni-client";
 import { createSupabasePublicClient } from "@/lib/supabase/public";
 import type { Product } from "@/hooks/useProducts";
+import { PUBLIC_PRODUCT_STATUSES, isShowcase } from "@/lib/product-status";
 
 const SITE_URL = "https://www.emeraldress.com";
 const SUPABASE_ASSETS = "https://jtmbnmpggzbucmgglisw.supabase.co/storage/v1/object/public/emerald-asset";
@@ -48,6 +49,9 @@ const breadcrumbSchema = {
 };
 
 function buildCollectionSchema(products: Product[]) {
+  // I capi in vetrina non hanno una scheda aperta: metterli nell'ItemList
+  // significherebbe dare a Google un elenco di URL che rispondono 307.
+  const listed = products.filter((p) => !isShowcase(p));
   return {
     "@context": "https://schema.org",
     "@type": "CollectionPage",
@@ -59,8 +63,8 @@ function buildCollectionSchema(products: Product[]) {
     isPartOf: { "@type": "WebSite", name: "Emeraldress", url: SITE_URL },
     mainEntity: {
       "@type": "ItemList",
-      numberOfItems: products.length,
-      itemListElement: products.map((p, i) => ({
+      numberOfItems: listed.length,
+      itemListElement: listed.map((p, i) => ({
         "@type": "ListItem",
         position: i + 1,
         url: `${SITE_URL}/product/${p.slug ?? p.id}`,
@@ -83,7 +87,12 @@ function buildCollectionSchema(products: Product[]) {
 async function fetchInitialProducts(): Promise<Product[]> {
   try {
     const supabase = createSupabasePublicClient();
-    const { data, error } = await supabase.from("products").select("*");
+    // Query che riempie l'HTML servito a Google: il filtro DEVE stare qui,
+    // non solo lato client. Allow-list esplicita, mai .neq().
+    const { data, error } = await supabase
+      .from("products")
+      .select("*")
+      .in("status", PUBLIC_PRODUCT_STATUSES);
     if (error) {
       // eslint-disable-next-line no-console
       console.error("[collezioni SSR] fetch products error:", error);

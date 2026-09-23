@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { createSupabasePublicClient } from "@/lib/supabase/public";
 import type { Product } from "@/hooks/useProducts";
+import { INDEXABLE_PRODUCT_STATUSES, isShowcase } from "@/lib/product-status";
 import { ProductDetailClient } from "./product-detail-client";
 
 export const revalidate = 60; // ISR 60s
@@ -38,6 +39,11 @@ function truncate(s: string, max: number): string {
   return (last > max * 0.6 ? slice.slice(0, last) : slice).trim() + "…";
 }
 
+/**
+ * Legge il prodotto SENZA filtrare lo status: qui serve distinguere i tre
+ * casi (inesistente → 404, bozza → 404, vetrina → 307). Il filtro sta
+ * a valle, in generateMetadata e in ProductPage.
+ */
 async function getProduct(slugOrId: string): Promise<Product | null> {
   const supabase = createSupabasePublicClient();
   // postgrest fa fail su .or(`id.eq.<non-uuid>`) perche' id e' uuid:
@@ -61,7 +67,12 @@ async function getProduct(slugOrId: string): Promise<Product | null> {
 export async function generateStaticParams() {
   try {
     const supabase = createSupabasePublicClient();
-    const { data } = await supabase.from("products").select("slug, id");
+    // Solo `active`: prerenderizzare una vetrina significherebbe generare a
+    // build-time una pagina che a runtime fa comunque redirect.
+    const { data } = await supabase
+      .from("products")
+      .select("slug, id")
+      .in("status", INDEXABLE_PRODUCT_STATUSES);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return ((data as any[]) ?? []).map((p) => ({ slug: (p.slug as string) ?? (p.id as string) }));
   } catch {
@@ -75,6 +86,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   if (!product) {
     return { title: "Prodotto non trovato", robots: { index: false, follow: false } };
   }
+  // Vetrina e bozza non sono pagine da indicizzare: la prima risponde 307,
+  // la seconda 404. `follow: false` per non far seguire link che non esistono.
+  const noIndex = isShowcase(product) || product.status === "draft";
   const image = product.images[0];
   const cleanName = product.name.trim().replace(/\s+/g, " ");
   const cleanDescriptionFull = fixMojibake(product.description) ||
@@ -87,6 +101,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   return {
     title: titleEnhanced,
     description: metaDescription,
+    ...(noIndex ? { robots: { index: false, follow: false } } : {}),
     alternates: {
       canonical: `/product/${product.slug ?? product.id}`,
       languages: {
@@ -115,7 +130,12 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 export default async function ProductPage({ params }: PageProps) {
   const { slug } = await params;
   const product = await getProduct(slug);
-  if (!product) notFound();
+  // Tre rami distinti, nell'ordine:
+  if (!product) notFound();                       // non esiste
+  if (product.status === "draft") notFound();     // bozza: per il pubblico non esiste
+  // Vetrina: 307 e non 404. La vetrina è un interruttore, e l'URL deve
+  // restare valido per quando il capo torna in vendita.
+  if (isShowcase(product)) redirect("/collezioni");
 
   const productUrl = `${SITE_URL}/product/${product.slug ?? product.id}`;
   const productImages = product.images.length > 0 ? product.images : [];
