@@ -4,7 +4,11 @@ import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { X } from "lucide-react";
-import { grantAnalyticsConsent, denyAnalyticsConsent } from "@/lib/analytics";
+import {
+  grantAnalyticsConsent,
+  denyAnalyticsConsent,
+  applyStoredAnalyticsConsent,
+} from "@/lib/analytics";
 
 const STORAGE_KEY = "emeraldress_cookie_consent_v1";
 
@@ -19,6 +23,9 @@ const CookieBanner = () => {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
+    // Chi ha gia' scelto non rivede il banner, ma la sua scelta va comunque
+    // riapplicata a ogni caricamento: i tracciatori ripartono da zero.
+    applyStoredAnalyticsConsent();
     const t = setTimeout(() => {
       if (!getCookieConsent()) setVisible(true);
     }, 800);

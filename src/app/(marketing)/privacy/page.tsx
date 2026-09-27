@@ -70,6 +70,11 @@ export default function PrivacyPage() {
           promozionali, previo consenso esplicito dell&apos;interessato (art. 6.1.a GDPR);
         </li>
         <li>
+          <strong>Riscontro alle richieste di disponibilità</strong> su capi non acquistabili
+          online, ivi comprese le misure precontrattuali adottate su richiesta
+          dell&apos;interessato (art. 6.1.b GDPR);
+        </li>
+        <li>
           <strong>Analisi e miglioramento del sito</strong>, sicurezza e prevenzione di attività
           fraudolente, sulla base del legittimo interesse del titolare (art. 6.1.f GDPR).
         </li>
@@ -87,7 +92,8 @@ export default function PrivacyPage() {
         I dati personali sono conservati per il tempo strettamente necessario al perseguimento
         delle finalità per cui sono stati raccolti e, in ogni caso, per i termini imposti dalla
         normativa fiscale e contabile vigente (di norma 10 anni per i documenti contabili). I dati
-        di marketing sono conservati fino a revoca del consenso.
+        di marketing sono conservati fino a revoca del consenso. Le richieste di disponibilità
+        sono conservate per 12 mesi dalla chiusura della richiesta.
       </p>
 
       <h2>6. Comunicazione dei dati a terzi</h2>
