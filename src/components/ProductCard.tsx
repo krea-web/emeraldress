@@ -22,8 +22,11 @@ const ProductCard = ({ product, index = 0, siblings }: ProductCardProps) => {
 
   const handleClick = (e: React.MouseEvent) => {
     // Mobile (<lg): apri viewer fullscreen anziche' navigare subito.
-    // Su desktop il click segue il <Link> normalmente (in vetrina non c'è).
-    if (typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches) {
+    // In vetrina si apre a qualunque larghezza: non c'è nessuna scheda dove
+    // andare, e il bottone "Richiedi disponibilità" vive nel visore.
+    const mobile =
+      typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches;
+    if (showcase || mobile) {
       e.preventDefault();
       setFullscreen(true);
     }
@@ -66,7 +69,16 @@ const ProductCard = ({ product, index = 0, siblings }: ProductCardProps) => {
           // destro, in nuova scheda, e seguibile dai crawler.
           <div
             onClick={handleClick}
-            className="group block cursor-pointer lg:cursor-default"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setFullscreen(true);
+              }
+            }}
+            role="button"
+            tabIndex={0}
+            aria-label={`Guarda le foto di ${product.name}`}
+            className="group block cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2"
           >
             {cardBody}
           </div>

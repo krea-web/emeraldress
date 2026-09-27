@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { useProducts, type Product } from "@/hooks/useProducts";
 import { isShowcase } from "@/lib/product-status";
@@ -45,9 +45,14 @@ const CollectionCard = ({
   const lowStock = !showcase && totalStock > 0 && totalStock <= 3;
 
   const handleClick = (e: React.MouseEvent) => {
-    // Mobile/tablet (<lg): apri viewer fullscreen con swipe siblings.
-    // Vale anche in vetrina: il requisito è che le foto scorrano.
-    if (typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches) {
+    // In vetrina il visore è l'unica destinazione possibile: non esiste una
+    // scheda prodotto dove mandare chi sta al computer, e da lì passa il
+    // bottone "Richiedi disponibilità". Quindi si apre a qualunque larghezza.
+    // Fuori dalla vetrina resta il comportamento di sempre: visore sotto lg,
+    // scheda prodotto sopra.
+    const mobile =
+      typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches;
+    if (showcase || mobile) {
       e.preventDefault();
       onOpenViewer(product.id);
     }
@@ -120,7 +125,16 @@ const CollectionCard = ({
         // Su mobile il tap apre comunque il viewer a tutto schermo.
         <div
           onClick={handleClick}
-          className="flex flex-col gap-4 cursor-pointer lg:cursor-default"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onOpenViewer(product.id);
+            }
+          }}
+          role="button"
+          tabIndex={0}
+          aria-label={`Guarda le foto di ${product.name}`}
+          className="flex flex-col gap-4 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2"
         >
           {cardBody}
         </div>
@@ -136,6 +150,7 @@ const CollectionCard = ({
 export function CollezioniClient({ initialProducts }: { initialProducts?: Product[] }) {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc" | "none">("none");
   const [viewerProductId, setViewerProductId] = useState<string | null>(null);
+  const [autoOpenRequest, setAutoOpenRequest] = useState(false);
 
   const { data: allProducts, isLoading, isError, refetch } = useProducts(undefined, { initialData: initialProducts });
   const products = useMemo(
@@ -154,6 +169,30 @@ export function CollezioniClient({ initialProducts }: { initialProducts?: Produc
     if (sortOrder === "desc") return items.sort((a, b) => b.price - a.price);
     return items;
   }, [products, sortOrder]);
+
+  // Ritorno dal login: /collezioni?richiesta=<slug> riapre il visore su quel
+  // capo con il form già aperto.
+  //
+  // Il parametro si legge da window.location e NON con useSearchParams: questa
+  // pagina è in ISR (revalidate 60) e useSearchParams la farebbe passare a
+  // rendering dinamico, buttando via la cache per tutti.
+  //
+  // Qui l'effect e' la forma giusta e non un ripiego: legge da un sistema
+  // esterno (l'URL del browser) che esiste solo dopo il montaggio. Un
+  // inizializzatore di useState girerebbe anche lato server, dove window non
+  // c'e', e produrrebbe un mismatch di idratazione.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const slug = new URLSearchParams(window.location.search).get("richiesta");
+    if (!slug) return;
+    const target = (allProducts ?? []).find((p) => (p.slug ?? p.id) === slug);
+    if (!target || !isShowcase(target)) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setViewerProductId(target.id);
+    setAutoOpenRequest(true);
+    // Ripulisce l'URL: un refresh non deve riaprire il form all'infinito.
+    window.history.replaceState({}, "", "/collezioni");
+  }, [allProducts]);
 
   const viewerIndex = viewerProductId
     ? sortedProducts.findIndex((p) => p.id === viewerProductId)
@@ -274,7 +313,11 @@ export function CollezioniClient({ initialProducts }: { initialProducts?: Produc
         <FullscreenProductViewer
           products={sortedProducts}
           initialIndex={viewerIndex}
-          onDismiss={() => setViewerProductId(null)}
+          autoOpenRequest={autoOpenRequest}
+          onDismiss={() => {
+            setViewerProductId(null);
+            setAutoOpenRequest(false);
+          }}
         />
       )}
     </main>

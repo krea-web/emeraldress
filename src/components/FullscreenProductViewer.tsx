@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Heart, ShoppingBag, X, ChevronUp, ChevronLeft, ChevronRight } from "lucide-react";
@@ -8,6 +8,7 @@ import useEmblaCarousel from "embla-carousel-react";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useWishlist } from "@/contexts/WishlistContext";
 import { AuthDialog } from "./AuthDialog";
+import AvailabilityRequestForm from "./AvailabilityRequestForm";
 import type { Product } from "@/hooks/useProducts";
 import { isShowcase } from "@/lib/product-status";
 
@@ -22,6 +23,11 @@ interface FullscreenProductViewerProps {
   onDismiss: () => void;
   /** @deprecated mantenuto per retrocompatibilità con ProductCard precedente. */
   onClose?: () => void;
+  /**
+   * Apre subito il form "Richiedi disponibilità" sul capo iniziale.
+   * Serve al ritorno dal login: /collezioni?richiesta=<slug>.
+   */
+  autoOpenRequest?: boolean;
 }
 
 const supabase = getSupabaseBrowserClient();
@@ -31,6 +37,7 @@ export default function FullscreenProductViewer({
   initialIndex = 0,
   product: singleProduct,
   onDismiss,
+  autoOpenRequest = false,
 }: FullscreenProductViewerProps) {
   const router = useRouter();
   const { addItem, removeItem, hasItem } = useWishlist();
@@ -61,6 +68,10 @@ export default function FullscreenProductViewer({
   const [index, setIndex] = useState(startIndex);
   const [authOpen, setAuthOpen] = useState(false);
   const [hasUser, setHasUser] = useState<boolean | null>(null);
+  // Ritorno dal login con ?richiesta=<slug>: il form si apre gia' montato sul
+  // capo su cui la persona aveva premuto. Inizializzatore invece di un
+  // effect: e' un valore noto al montaggio, non qualcosa da sincronizzare.
+  const [requestOpen, setRequestOpen] = useState(autoOpenRequest);
 
   const product = list[index];
   // Vetrina: il carosello, il loop e lo swipe restano identici (le foto
@@ -83,12 +94,18 @@ export default function FullscreenProductViewer({
     };
   }, [emblaApi]);
 
+  // Elemento che ha aperto il visore: alla chiusura il focus torna lì,
+  // altrimenti su desktop si finisce a navigare da capo con il Tab.
+  const openerRef = useRef<HTMLElement | null>(null);
+
   // Lock body scroll mentre il viewer è aperto + auth probe
   useEffect(() => {
+    openerRef.current = (document.activeElement as HTMLElement | null) ?? null;
     supabase.auth.getSession().then(({ data }) => setHasUser(!!data.session?.user));
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = "";
+      openerRef.current?.focus?.();
     };
   }, []);
 
@@ -100,6 +117,42 @@ export default function FullscreenProductViewer({
     if (isShowcase(list[index])) return;
     router.push(productHref);
   }, [router, productHref, list, index]);
+
+  // Tastiera: da desktop il visore è una destinazione a tutti gli effetti,
+  // e senza queste scorciatoie si resta intrappolati col mouse.
+  // Quando il form è aperto comanda lui: ha il suo Esc, e le frecce devono
+  // restare disponibili per muoversi dentro i campi.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (requestOpen) return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onDismiss();
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        goPrev();
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        goNext();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [requestOpen, onDismiss, goPrev, goNext]);
+
+  /**
+   * Per chiedere bisogna essere registrati, altrimenti arrivano richieste a
+   * caso. Il ritorno riapre il visore su QUESTO capo con il form già aperto.
+   */
+  const requestAvailability = () => {
+    if (!product) return;
+    if (hasUser === false) {
+      const back = `/collezioni?richiesta=${encodeURIComponent(product.slug ?? product.id)}`;
+      router.push(`/login?redirectTo=${encodeURIComponent(back)}`);
+      return;
+    }
+    setRequestOpen(true);
+  };
 
   const toggleLike = () => {
     if (!product) return;
@@ -129,7 +182,7 @@ export default function FullscreenProductViewer({
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={{ duration: 0.2 }}
-        className="fixed inset-0 z-[100] bg-black lg:hidden"
+        className="fixed inset-0 z-[100] bg-black"
         role="dialog"
         aria-modal="true"
         aria-label={`Anteprima ${product.name}`}
@@ -211,7 +264,7 @@ export default function FullscreenProductViewer({
 
         {/* Bottom info + actions */}
         <div className="absolute inset-x-0 bottom-0 z-10 pb-[env(safe-area-inset-bottom)] bg-gradient-to-t from-black/85 via-black/50 to-transparent pt-12">
-          <div className="px-5 pb-5">
+          <div className="px-5 pb-5 max-w-3xl mx-auto w-full">
             {!showcase && (
               <button
                 onClick={openDetail}
@@ -247,9 +300,20 @@ export default function FullscreenProductViewer({
                 </button>
               )}
 
-              {/* In vetrina spariscono entrambe le azioni. Il cuore compreso:
-                  la wishlist salva anche il prezzo, e quel prezzo
-                  ricomparirebbe in /profilo. */}
+              {/* In vetrina spariscono entrambe le azioni di acquisto. Il
+                  cuore compreso: la wishlist salva anche il prezzo, e quel
+                  prezzo ricomparirebbe in /profilo. Al loro posto, l’unica
+                  azione possibile su un capo in vetrina. */}
+              {showcase && (
+                <button
+                  onClick={requestAvailability}
+                  disabled={hasUser === null}
+                  className="shrink-0 h-12 px-6 rounded-full bg-white text-emerald-950 text-[11px] tracking-[0.2em] uppercase font-medium whitespace-nowrap shadow-lg active:scale-95 disabled:opacity-60 transition-all"
+                >
+                  Richiedi disponibilità
+                </button>
+              )}
+
               {!showcase && (
                 <div className="flex items-center gap-3 shrink-0">
                   <button
@@ -276,6 +340,13 @@ export default function FullscreenProductViewer({
           </div>
         </div>
       </motion.div>
+
+      {requestOpen && product && (
+        <AvailabilityRequestForm
+          product={product}
+          onClose={() => setRequestOpen(false)}
+        />
+      )}
 
       <AuthDialog
         open={authOpen}

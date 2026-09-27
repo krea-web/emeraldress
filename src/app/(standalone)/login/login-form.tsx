@@ -192,9 +192,18 @@ export function LoginForm() {
     setInfo(null);
     setIsLoading(true);
     try {
+      // Il ritorno va conservato ATTRAVERSO il callback: Google non torna qui,
+      // torna su /auth/callback, che sa leggere solo `?next=`. Senza questo, chi
+      // entrava con Google finiva su /profilo e perdeva il capo che stava
+      // chiedendo. Password e registrazione lo facevano gia'.
+      const redirectTo = searchParams.get("redirectTo");
+      const next =
+        redirectTo && redirectTo.startsWith("/")
+          ? `?next=${encodeURIComponent(redirectTo)}`
+          : "";
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: "google",
-        options: { redirectTo: `${window.location.origin}/auth/callback` },
+        options: { redirectTo: `${window.location.origin}/auth/callback${next}` },
       });
       if (oauthError) {
         setError("Accesso Google non disponibile. Riprova.");
