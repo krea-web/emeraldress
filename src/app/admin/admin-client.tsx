@@ -7,6 +7,7 @@ import { RichTextEditor } from "@/components/RichTextEditor";
 import { AnalyticsDashboard } from "@/components/admin/AnalyticsDashboard";
 import { ReturnsAdminSection } from "@/components/admin/ReturnsAdminSection";
 import { CustomersAdminSection } from "@/components/admin/CustomersAdminSection";
+import { AvailabilityRequestsSection } from "@/components/admin/AvailabilityRequestsSection";
 import type { ProductStatus } from "@/lib/product-status";
 
 // TECH DEBT: cast a any per workaround known issue @supabase/ssr generic inference.
@@ -20,7 +21,7 @@ import {
   Lock, GripVertical, ImageIcon, Mail, Download, Users, Archive, Send, Loader2,
   Code, Type, Layers, Settings, Palette, ScanSearch, Tag, Percent, Copy,
   BarChart3, MousePointerClick, RotateCcw, ExternalLink, AlertTriangle, Megaphone, Link as LinkIcon,
-  Star, MessageSquare, Home, ArrowLeft, Menu, PackageCheck,
+  Star, MessageSquare, Home, ArrowLeft, Menu, PackageCheck, Inbox,
 } from "lucide-react";
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle,
@@ -87,7 +88,7 @@ interface Collection {
   is_active: boolean;
 }
 
-type AdminSection = "dashboard" | "analytics" | "products" | "orders" | "returns" | "clients" | "reviews" | "newsletter" | "collections" | "settings" | "scanner" | "marketing" | "email_templates";
+type AdminSection = "dashboard" | "analytics" | "products" | "orders" | "returns" | "requests" | "clients" | "reviews" | "newsletter" | "collections" | "settings" | "scanner" | "marketing" | "email_templates";
 
 interface EmailTemplate {
   id: string;
@@ -180,6 +181,9 @@ export function AdminClient() {
   const router = useRouter();
   const [authState, setAuthState] = useState<"loading" | "unauthenticated" | "not-admin" | "admin">("loading");
   const [section, setSection] = useState<AdminSection>("dashboard");
+  // Quante richieste di disponibilita' sono ancora da lavorare: il numero
+  // arriva dalla sezione stessa, che e' l'unica a leggere quella tabella.
+  const [newRequestsCount, setNewRequestsCount] = useState(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // login form
@@ -1253,6 +1257,18 @@ ${bodyContent}
   }
 
   // ── Sidebar nav items ────────────────────────────────────────────────────────
+  // id prodotto -> prima immagine, per le miniature nella lista Richieste.
+  // La tabella availability_requests fotografa il nome del capo ma non
+  // l'immagine: quella la prendiamo dal catalogo, che l'admin ha gia' in RAM.
+  const productImages = useMemo(() => {
+    const map: Record<string, string | undefined> = {};
+    for (const p of products) {
+      const first = (p.images || []).flat(Infinity).find((u): u is string => typeof u === "string");
+      map[p.id] = first;
+    }
+    return map;
+  }, [products]);
+
   const nav = [
     { id: "dashboard" as AdminSection, icon: LayoutDashboard, label: "Dashboard" },
     { id: "analytics" as AdminSection, icon: BarChart3, label: "Analytics" },
@@ -1260,6 +1276,7 @@ ${bodyContent}
     { id: "products" as AdminSection, icon: Package, label: "Prodotti" },
     { id: "orders" as AdminSection, icon: ShoppingBag, label: "Ordini" },
     { id: "returns" as AdminSection, icon: RotateCcw, label: "Resi" },
+    { id: "requests" as AdminSection, icon: Inbox, label: "Richieste", badge: newRequestsCount },
     { id: "clients" as AdminSection, icon: Users, label: "Clienti" },
     { id: "reviews" as AdminSection, icon: MessageSquare, label: "Recensioni" },
     { id: "marketing" as AdminSection, icon: Tag, label: "Marketing" },
@@ -1308,7 +1325,7 @@ ${bodyContent}
             </SheetTitle>
           </SheetHeader>
           <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
-            {nav.map(({ id, icon: Icon, label }) => (
+            {nav.map(({ id, icon: Icon, label, badge }) => (
               <button
                 key={id}
                 onClick={() => handleMobileNav(id)}
@@ -1320,6 +1337,11 @@ ${bodyContent}
               >
                 <Icon className="w-4 h-4 shrink-0" />
                 <span className="font-medium">{label}</span>
+                {!!badge && (
+                  <span className="ml-auto min-w-[20px] h-5 px-1.5 rounded-full bg-amber-500 text-white text-[10px] font-semibold flex items-center justify-center">
+                    {badge}
+                  </span>
+                )}
               </button>
             ))}
           </nav>
@@ -1373,7 +1395,7 @@ ${bodyContent}
 
             {/* Nav */}
             <nav className="flex-1 px-2 space-y-1">
-              {nav.map(({ id, icon: Icon, label }) => (
+              {nav.map(({ id, icon: Icon, label, badge }) => (
                 <button
                   key={id}
                   onClick={() => setSection(id)}
@@ -1385,7 +1407,12 @@ ${bodyContent}
                 >
                   <Icon className="w-4 h-4 shrink-0" />
                   <span className="text-sm font-medium">{label}</span>
-                  {section === id && <ChevronRight className="w-3 h-3 ml-auto" />}
+                  {!!badge && (
+                    <span className="ml-auto min-w-[20px] h-5 px-1.5 rounded-full bg-amber-500 text-white text-[10px] font-semibold flex items-center justify-center">
+                      {badge}
+                    </span>
+                  )}
+                  {section === id && !badge && <ChevronRight className="w-3 h-3 ml-auto" />}
                 </button>
               ))}
             </nav>
@@ -2215,6 +2242,21 @@ ${bodyContent}
               )}
 
               {/* ══ RECENSIONI ════════════════════════════════════════════════ */}
+              {section === "requests" && (
+                <motion.div
+                  key="requests"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <AvailabilityRequestsSection
+                    productImages={productImages}
+                    onCountChange={setNewRequestsCount}
+                  />
+                </motion.div>
+              )}
+
               {section === "reviews" && (
                 <motion.div
                   key="reviews"
